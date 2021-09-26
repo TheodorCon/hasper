@@ -1,9 +1,9 @@
 module Main where
 
-import GHC.IO.Handle.FD (openFile)
 import System.Directory
 import System.Environment (getArgs)
 import System.IO (IOMode (ReadMode))
+import qualified System.IO.Strict as S
 
 getDefaultDirectory :: IO FilePath
 getDefaultDirectory = (++ "/.hasper") <$> getHomeDirectory
@@ -14,16 +14,23 @@ getDefaultFile = (++ "/default.txt") <$> getDefaultDirectory
 main :: IO ()
 main = do
   args <- getArgs
-  defaultDirectory <- getDefaultDirectory
-  dirExists <- doesDirectoryExist defaultDirectory
-  if dirExists
-    then putStrLn $ "saved " ++ (args !! 0)
-    else do
-      createDirectory defaultDirectory
-      putStrLn $ "saved " ++ (args !! 0)
+  case args of
+    ["-r"] -> getDefaultFile >>= readFile >>= putStrLn
+    _ -> do
+      defaultDirectory <- getDefaultDirectory
+      dirExists <- doesDirectoryExist defaultDirectory
+      if dirExists
+        then writeInFile (head args)
+        else do
+          createDirectory defaultDirectory
+          writeInFile (head args)
 
--- writeInFile :: IO ()
--- writeInFile = do
---   defaultFile <- getDefaultFile
---   openFile defaultFile ReadMode $
---     \file -> do undefined
+writeInFile :: String -> IO ()
+writeInFile task = do
+  defaultFile <- getDefaultFile
+  fileExists <- doesFileExist defaultFile
+  if fileExists
+    then do
+      contents <- S.run . S.readFile $ defaultFile
+      writeFile defaultFile (contents ++ "\n" ++ task)
+    else writeFile defaultFile task
