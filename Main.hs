@@ -1,12 +1,14 @@
 module Main where
 
-import Control.Monad
 -- import Data.
 
+import Control.Concurrent (isCurrentThreadBound)
+import Control.Monad
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BSLC
 import Data.Csv
 import Data.DateTime
+import Data.Functor
 import qualified Data.Vector as V
 import qualified Data.Vector.Primitive as VP
 import System.Directory
@@ -72,22 +74,49 @@ main :: IO ()
 main = do
   args <- getArgs
   case args of
-    ["-tw"] -> writeInDefault . BSLC.toStrict . encode $ [mockTask]
-    ["-tr"] -> getDefaultFile >>= readFile >>= (putStrLn . handleEither . (decode NoHeader . BSLC.pack))
-      where
-        handleEither :: Either String (V.Vector Task) -> String
-        handleEither (Left errorMessage) = errorMessage
-        handleEither (Right tasks) = V.foldl (\acc task -> acc ++ printTask task ++ "\n") "" tasks
-    ["-r"] -> getDefaultFile >>= readFile >>= putStrLn
-    ["-n", text] -> makeTaskDefault text >>= writeInDefault . (BSLC.toStrict . encode . (: []))
+    ["-n", text] -> putStrLn "Task saved" *> makeTaskDefault text >>= writeInDefault . (BSLC.toStrict . encode . (: []))
+    ["-a"] -> getDefaultFile >>= BS.readFile >>= (putStrLn . csvToAllTaskString)
+    ["-d"] -> getDefaultFile >>= BS.readFile >>= (putStrLn . csvToTaskString taskIsCompleted)
+    ["-u"] -> getDefaultFile >>= BS.readFile >>= (putStrLn . csvToTaskString (not . taskIsCompleted))
+    ["-c", idStr] -> do
+      eitherTasks <- (getDefaultFile >>= BS.readFile) <&> (decode NoHeader . BSLC.fromStrict)
+      case eitherTasks of
+        Left errorMessageA -> putStrLn errorMessageA
+        Right tasks -> case completeTask tasks (read idStr) of
+          Left errorMessageB -> putStrLn errorMessageB
+          Right newTasks -> putStrLn "Task completed" *> resetDefault *> (writeInDefault . BSLC.toStrict . encode $ V.toList newTasks)
+    ["-dw"] -> writeInDefault . BSLC.toStrict . encode $ [mockTask]
+    ["-dr"] -> getDefaultFile >>= readFile >>= putStrLn
+    ["-dreset"] -> resetDefault <* putStrLn "Erased the default folder"
     _ -> putStrLn "Hasper is a cute little TODO tool made in Haskell"
 
-reset :: IO ()
-reset = do
-  defaultFile <- getDefaultFile
-  fileExists <- doesFileExist defaultFile
+completeTask :: V.Vector Task -> Int -> Either String (V.Vector Task)
+completeTask tasks id =
+  let (before, after) = V.break (\t -> taskId t == id) tasks
+      maybeTask = (V.!?) after 0
+      maybeNewTask = (\t -> t {taskIsCompleted = True}) <$> maybeTask
+   in case maybeNewTask of
+        Nothing -> Left ("Could not find a task with id" ++ show id)
+        Just newTask -> Right ((V.++) before (V.cons newTask (V.tail after)))
+
+csvToAllTaskString :: BS.ByteString -> String
+csvToAllTaskString = csvToTaskString (const True)
+
+csvToTaskString :: (Task -> Bool) -> BS.ByteString -> String
+csvToTaskString pred = handleEither . decode NoHeader . BSLC.fromStrict
+  where
+    handleEither :: Either String (V.Vector Task) -> String
+    handleEither (Left errorMessage) = errorMessage
+    handleEither (Right tasks) = "\n" ++ (V.foldl (\acc task -> acc ++ printTask task ++ "\n") "" . V.filter pred) tasks
+
+resetDefault :: IO ()
+resetDefault = getDefaultFile >>= resetFile
+
+resetFile :: FilePath -> IO ()
+resetFile file = do
+  fileExists <- doesFileExist file
   when fileExists $ do
-    writeFile defaultFile ""
+    writeFile file ""
 
 writeInDefault :: BS.ByteString -> IO ()
 writeInDefault task = do
@@ -113,7 +142,7 @@ printTask task =
         ++ "\t"
         ++ formatDateTime "%d.%m.%Y %H:%M" date
         ++ "\t"
-        ++ (if isCompleted then "Completed" else "Ongoing")
+        ++ (if isCompleted then "Done" else "Prog")
         ++ "\t"
         ++ text
 
