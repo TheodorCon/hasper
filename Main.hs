@@ -1,9 +1,14 @@
 module Main where
 
 import Control.Monad
+-- import Data.
+
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy.Char8 as BSLC
 import Data.Csv
 import Data.DateTime
--- import Data.
+import qualified Data.Vector as V
+import qualified Data.Vector.Primitive as VP
 import System.Directory
 import System.Environment (getArgs)
 import System.IO (IOMode (ReadMode))
@@ -14,7 +19,7 @@ mockTask =
   Task
     { taskId = -1,
       taskDate = fromGregorian 2021 1 1 0 0 0,
-      taskText = "mock text",
+      taskText = "mock text mock text mock text mock text mock text mock text mock text mock text mock text mock text mock text mock text mock text ",
       taskIsCompleted = False
     }
 
@@ -67,17 +72,15 @@ main :: IO ()
 main = do
   args <- getArgs
   case args of
-    -- ["-tw"] -> encode mockTask >>= writeInDefault
-    -- ["-tr"] -> (getDefaultFile >>= readFile . decode NoHeader) >>= putStrLn
+    ["-tw"] -> writeInDefault . BSLC.toStrict . encode $ [mockTask]
+    ["-tr"] -> getDefaultFile >>= readFile >>= (putStrLn . handleEither . (decode NoHeader . BSLC.pack))
+      where
+        handleEither :: Either String (V.Vector Task) -> String
+        handleEither (Left errorMessage) = errorMessage
+        handleEither (Right tasks) = V.foldl (\acc task -> acc ++ printTask task ++ "\n") "" tasks
     ["-r"] -> getDefaultFile >>= readFile >>= putStrLn
-    _ -> do
-      defaultDirectory <- getDefaultDirectory
-      dirExists <- doesDirectoryExist defaultDirectory
-      if dirExists
-        then writeInDefault (head args)
-        else do
-          createDirectory defaultDirectory
-          writeInDefault (head args)
+    ["-n", text] -> makeTaskDefault text >>= writeInDefault . (BSLC.toStrict . encode . (: []))
+    _ -> putStrLn "Hasper is a cute little TODO tool made in Haskell"
 
 reset :: IO ()
 reset = do
@@ -86,19 +89,19 @@ reset = do
   when fileExists $ do
     writeFile defaultFile ""
 
-writeInDefault :: String -> IO ()
+writeInDefault :: BS.ByteString -> IO ()
 writeInDefault task = do
   defaultFile <- getDefaultFile
   writeInFile defaultFile task
 
-writeInFile :: FilePath -> String -> IO ()
+writeInFile :: FilePath -> BS.ByteString -> IO ()
 writeInFile file task = do
   fileExists <- doesFileExist file
   if fileExists
     then do
-      contents <- S.run . S.readFile $ file
-      writeFile file (contents ++ "\n" ++ task)
-    else writeFile file task
+      contents <- BS.readFile file
+      BS.writeFile file (contents <> task)
+    else BS.writeFile file task
 
 printTask :: Task -> String
 printTask task =
@@ -106,20 +109,48 @@ printTask task =
       date = taskDate task
       text = taskText task
       isCompleted = taskIsCompleted task
-   in show id ++ "\t"
+   in show id
+        ++ "\t"
         ++ formatDateTime "%d.%m.%Y %H:%M" date
-        ++ text
+        ++ "\t"
         ++ (if isCompleted then "Completed" else "Ongoing")
-
-taskToCsv :: Task -> String
-taskToCsv task =
-  let id = taskId task
-      (year, month, day, hour, minute, _) = (toGregorian . taskDate) task
-      text = taskText task
-      isCompleted = taskIsCompleted task
-   in error "unimplemented"
+        ++ "\t"
+        ++ text
 
 stringToTask :: String -> Task
 stringToTask string =
   let constituents = words string
    in undefined
+
+getNextDefaultTaskId :: IO Int
+getNextDefaultTaskId = do
+  defaultFile <- getDefaultFile
+  getNextTaskId defaultFile
+
+getNextTaskId :: FilePath -> IO Int
+getNextTaskId file = do
+  fileExists <- doesFileExist file
+  if fileExists
+    then do
+      contents <- BS.readFile file
+      case decode NoHeader (BSLC.fromStrict contents) :: Either String (V.Vector Task) of
+        Left errorMessage -> return (-1)
+        Right taskVector -> return $ V.length taskVector
+    else return (-1)
+
+makeTaskDefault :: String -> IO Task
+makeTaskDefault text = do
+  defaultFile <- getDefaultFile
+  makeTask defaultFile text
+
+makeTask :: FilePath -> String -> IO Task
+makeTask file text = do
+  currentTime <- getCurrentTime
+  nextId <- getNextTaskId file
+  return $
+    Task
+      { taskId = nextId,
+        taskDate = currentTime,
+        taskText = text,
+        taskIsCompleted = False
+      }
