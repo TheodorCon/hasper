@@ -72,6 +72,7 @@ getDefaultFile = (++ "/default.csv") <$> getDefaultDirectory
 
 main :: IO ()
 main = do
+  initialize
   args <- getArgs
   case args of
     ["-n", text] -> putStrLn "Task saved" *> makeTaskDefault text >>= writeInDefault . (BSLC.toStrict . encode . (: []))
@@ -89,6 +90,14 @@ main = do
     ["-dr"] -> getDefaultFile >>= readFile >>= putStrLn
     ["-dreset"] -> resetDefault <* putStrLn "Erased the default folder"
     _ -> putStrLn "Hasper is a cute little TODO tool made in Haskell"
+
+initialize :: IO ()
+initialize = do
+  defaultFile <- getDefaultFile
+  fileExists <- doesFileExist defaultFile
+  if fileExists
+    then return ()
+    else writeFile defaultFile ""
 
 completeTask :: V.Vector Task -> Int -> Either String (V.Vector Task)
 completeTask tasks id =
