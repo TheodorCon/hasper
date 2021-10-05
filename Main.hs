@@ -8,11 +8,18 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BSLC
 import Data.Csv
 import Data.DateTime
+  ( DateTime,
+    formatDateTime,
+    fromGregorian,
+    getCurrentTime,
+    toGregorian,
+  )
 import Data.Functor
 import qualified Data.Vector as V
 import qualified Data.Vector.Primitive as VP
 import System.Directory
 import System.Environment (getArgs)
+import System.FilePath
 import System.IO (IOMode (ReadMode))
 import qualified System.IO.Strict as S
 
@@ -97,7 +104,9 @@ initialize = do
   fileExists <- doesFileExist defaultFile
   if fileExists
     then return ()
-    else writeFile defaultFile ""
+    else do
+      createDirectoryIfMissing True $ takeDirectory defaultFile
+      writeFile defaultFile ""
 
 completeTask :: V.Vector Task -> Int -> Either String (V.Vector Task)
 completeTask tasks id =
