@@ -87,9 +87,9 @@ listDoneTaskParser =
   HasperListDoneTasks
     <$ flag'
       ()
-      ( long "progress"
-          <> short 'p'
-          <> help "List tasks in progress in the repository"
+      ( long "done"
+          <> short 'd'
+          <> help "List done tasks in the repository"
       )
 
 devResetParser :: OPT.Parser HasperCommand
